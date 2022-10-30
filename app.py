@@ -1,19 +1,16 @@
 #Khai báo các thư viện cần sử dụng
 from flask import Flask, render_template, Response
 import cv2
-import cv2
 import os
 from keras.models import load_model
 import numpy as np
 import time
-from pygame import mixer
-import pygame
 
 
 app=Flask(__name__)
 port = 8000
 
-def gen_frames(frame, face, leye, reye, model):
+def gen_frames(frame, leye, reye, model):
     
     #Khởi tạo bộ đếm và điểm đánh giá 
     rpred=[[99] * 99]
@@ -22,8 +19,6 @@ def gen_frames(frame, face, leye, reye, model):
     height,width = frame.shape[:2]
     #Chuyển đổi ảnh sang hệ gray 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
-    #Dectect ra khuôn mặt   
-    faces = face.detectMultiScale(gray,minNeighbors=5,scaleFactor=1.1,minSize=(25,25))
     #Detect ra mắt phải và trái, giá trị trả về gồm có tọa độ mắt kèm theo chiều dài và chiều rộng của hình chữ nhật bao quanh mắt
     left_eye = leye.detectMultiScale(gray)
     right_eye =  reye.detectMultiScale(gray)
@@ -45,10 +40,10 @@ def gen_frames(frame, face, leye, reye, model):
         rpred = (model.predict(r_eye) > 0.5).astype("int32")
         break
     
-    if lpred[0][0] == 1 and rpred[0][0] == 1:
-        return 1
-    else: 
+    if lpred[0][0] == 0 or rpred[0][0] == 0:
         return 0
+    else: 
+        return 1
 
 
 
@@ -84,8 +79,6 @@ def new_process():
 
 
     
-    #Sử dụng bộ lọc Haar  để nhận diện khuôn mặt
-    face = cv2.CascadeClassifier('haar cascade files\haarcascade_frontalface_alt.xml')
     #Sử dụng bộ lọc Haar để nhận diện mắt trái
     leye = cv2.CascadeClassifier('haar cascade files\haarcascade_lefteye_2splits.xml')
     #Sử dụng bộ lọc Haar để nhận diện mắt phải
@@ -114,41 +107,44 @@ def new_process():
             frame_data = data[:msg_size]
             data  = data[msg_size:]
             frame = pickle.loads(frame_data)   
+
             # sử dụng frame ở đây
+
+            # show
             # cv2.imshow("RECEIVING VIDEO",frame)
-            # if cv2.waitKey(1) == '13':
-            #     break
 
-            alert = False
-            res = gen_frames(frame, face, leye, reye, model)
-            if res == 1: #closed eyes
-                if first_time_close == 0: # chưa từng nhắm sau khi mở mắt
-                    first_time_close = time.time()
-                else:
-                    if time.time() - first_time_close > 15:
-                        alert = True
-            else: #open eyes
-                first_time_close = 0
+            t = int(time.time()*10)
+            if 0 <= t%10 <= 5: #chi
+                alert = False
+                res = gen_frames(frame, leye, reye, model)
+                if res == 1: #closed eyes
+                    if first_time_close == 0: # chưa từng nhắm sau khi mở mắt
+                        first_time_close = time.time()
+                    else:
+                        if time.time() - first_time_close > 15:
+                            alert = True
+                else: #open eyes
+                    first_time_close = 0
 
-            #gửi dữ liệu về client
-            seconds = int(time.time())
-            if seconds % 2 == 0:
-                if res == 1:
-                    msg = 'closed'
-                else:
-                    msg = 'open'
-                client_socket.send(msg.encode())
-                if alert:
-                    msg = 'alert'
+                #gửi dữ liệu về client
+                seconds = int(time.time())
+                if seconds % 2 == 0:
+                    if res == 1:
+                        msg = 'closed'
+                    else:
+                        msg = 'opened'
                     client_socket.send(msg.encode())
-                    alert = False
+                    if alert:
+                        msg = 'alert'
+                        client_socket.send(msg.encode())
+                        alert = False
 
         client_socket.close()
 
 
 
 if __name__=='__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run()
 
 
     
